@@ -12,8 +12,42 @@ local VISUAL_CLASS_NAMES = {
 local THROTTLE_MAX = 100
 local VISUAL_TEMP_MAX = 100
 
+local function ThrottleNormalized(self)
+	return self.Throttle / THROTTLE_MAX
+end
+
+local function GetWidth(Angle, Height)
+	local OtherAngle = 180 - (Angle + 90)
+	return Height / math.tan(math.rad(OtherAngle))
+end
+
 local Engine = {}
 Engine.__index = Engine
+
+local function UpdateBeamEnd(self)
+	local NozzleHeight = self.Model.Nozzle.Size.Y
+
+	local NewDistance = 32 + (96 * ThrottleNormalized(self))
+	self.Model.Nozzle.BeamEnd.Position = Vector3.new(math.noise(1, 0, (self.__runtime * 32)), -NewDistance, math.noise(0, 1, (self.__runtime * 32)))
+	return NewDistance
+end
+
+local function UpdateBeams(self)
+	local Height = UpdateBeamEnd(self)
+	local Angle = math.clamp(self.VisualAngle, 1, 75)
+
+	local Result = GetWidth(Angle, Height)
+
+	for _, Beam in self.Model:GetDescendants() do
+		if Beam:IsA("Beam") then
+			local s = (Result * 2) + (Beam.Width0 / 2)
+			if Beam:FindFirstChild("Divisor") then
+				s = s / Beam.Divisor.Value
+			end
+			Beam.Width1 = s
+		end
+	end
+end
 
 local function CheckInstanceIfItsA(Instance: Instance, ClassNames: Array<string>): boolean | string
 	for _, ClassName in ClassNames do
@@ -67,6 +101,12 @@ local function UpdateEffects(self, Effect, Value)
 		end
 
 		if Effect.Name == "Temperature" then end
+	elseif Value == "Decal" then
+		if Effect.Name == "Throttle" then end
+		if Effect.Name == "Flare" then end
+		if Effect.Name == "Temperature" then
+			Effect.Transparency = 1 - (self.VisualTemp / VISUAL_TEMP_MAX)
+		end
 	end
 end
 
@@ -84,8 +124,7 @@ function Engine:Update(deltaTime)
 		end
 	end
 
-	local nozzleYAxis = 129.5
-	self.Model.Nozzle.BeamEnd.Position = Vector3.new(math.noise(1, 0, (self.__runtime * 32)), -nozzleYAxis, math.noise(0, 1, (self.__runtime * 32)))
+	UpdateBeams(self)
 end
 
 function Engine:ThrottleValue(newThrottleValue)
@@ -104,6 +143,7 @@ function Engine.new(name: string, model: Model)
 
 		Throttle = 0; -- 0-100 (sorry i hate floats)
 		VisualTemp = 0; -- 0-100
+		VisualAngle = 45;
 
 		Stats = require(GameData.Parts.Engines[name]);
 		Model = model
